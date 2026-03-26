@@ -1,6 +1,4 @@
-import json
 import matplotlib.pyplot as plt
-import numpy as np
 import os
 import torch
 import torchvision
@@ -8,7 +6,6 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tempfile import TemporaryDirectory
-import json
 
 class CNN(nn.Module):
     """Convolutional Neural Network model for image classification."""
@@ -25,28 +22,23 @@ class CNN(nn.Module):
         super().__init__()
         self.base_model = base_model
         self.num_classes = num_classes
+        self.feature_extractor = nn.Sequential(*list(self.base_model.children())[:-1])
 
         # Freeze convolutional layers
-        for param in self.base_model.parameters():
+        for param in self.feature_extractor.parameters():
             param.requires_grad = False
 
         # Unfreeze specified number of layers
         if unfreezed_layers > 0:
-            for layer in list(self.base_model.children())[-unfreezed_layers:]:
+            for layer in list(self.feature_extractor.children())[-unfreezed_layers:]:
                 for param in layer.parameters():
                     param.requires_grad = True
 
         # Add a new softmax output layer
-        self.fc = nn.Sequential(
-            nn.Linear(self.base_model.fc.in_features, 1024),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(1024, num_classes),
-            nn.Softmax(dim=1)
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.LazyLinear(num_classes)
         )
-
-        # Replace the last layer of the base model
-        self.base_model.fc = nn.Identity()
 
     def forward(self, x):
         """Forward pass of the model.
@@ -54,9 +46,8 @@ class CNN(nn.Module):
         Args:
             x: Input data.
         """
-        x = self.base_model(x)
-        x = x.reshape(x.size(0), -1)
-        x = self.fc(x)
+        x = self.feature_extractor(x)
+        x = self.classifier(x)
         return x
 
     def train_model(self, 
